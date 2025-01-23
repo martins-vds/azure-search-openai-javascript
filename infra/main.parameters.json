@@ -21,13 +21,10 @@
       "value": "${AZURE_OPENAI_RESOURCE_GROUP}"
     },
     "openAiResourceGroupLocation": {
-      "value": "${AZURE_OPENAI_RESOURCE_GROUP_LOCATION=eastus2}"
+      "value": "${AZURE_OPENAI_RESOURCE_GROUP_LOCATION=canadaeast}"
     },
     "openAiSkuName": {
       "value": "S0"
-    },
-    "webAppLocation": {
-      "value": "${AZURE_WEBAPP_LOCATION=eastus2}"
     },
     "searchIndexName": {
       "value": "${AZURE_SEARCH_INDEX=gptkbindex}"
