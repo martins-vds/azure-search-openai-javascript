@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 COPY ./package*.json ./
+COPY ./packages/chat-component/package.json ./packages/chat-component/
 COPY ./packages/webapp/package.json ./packages/webapp/
 RUN npm ci --omit=dev --workspace=webapp --cache /tmp/empty-cache
 COPY --from=build app/packages/webapp/dist packages/webapp/dist
