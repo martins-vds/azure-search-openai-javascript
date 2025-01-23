@@ -5,8 +5,10 @@
 FROM node:18-alpine as build
 WORKDIR /app
 COPY ./package*.json ./
+COPY ./packages/chat-component ./packages/chat-component
 COPY ./packages/webapp ./packages/webapp
 RUN npm ci --cache /tmp/empty-cache
+RUN npm run build --workspace=chat-component
 RUN npm run build --workspace=webapp
 
 # Run Node.js app
@@ -18,7 +20,9 @@ WORKDIR /app
 COPY ./package*.json ./
 COPY ./packages/chat-component/package.json ./packages/chat-component/
 COPY ./packages/webapp/package.json ./packages/webapp/
+RUN npm ci --omit=dev --workspace=chat-component --cache /tmp/empty-cache
 RUN npm ci --omit=dev --workspace=webapp --cache /tmp/empty-cache
+COPY --from=build app/packages/chat-component/dist packages/chat-component/dist
 COPY --from=build app/packages/webapp/dist packages/webapp/dist
 EXPOSE 3002
 CMD [ "npm", "start", "--workspace=webapp" ]
