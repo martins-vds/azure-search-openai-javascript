@@ -13,6 +13,7 @@ param resourceGroupName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
 param webAppName string = 'webapp'
+param webAppImageName string = ''
 param searchApiName string = 'search'
 param searchApiImageName string = ''
 param indexerApiName string = 'indexer'
@@ -83,6 +84,7 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = union({ 'azd-env-name': environmentName }, empty(aliasTag) ? {} : { alias: aliasTag })
 var allowedOrigins = empty(allowedOrigin) ? [webApp.outputs.uri] : [webApp.outputs.uri, allowedOrigin]
 
+var webAppIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}webapp-${resourceToken}'
 var indexerApiIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}indexer-api-${resourceToken}'
 var searchApiIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}search-api-${resourceToken}'
 
@@ -134,14 +136,37 @@ module containerApps './core/host/container-apps.bicep' = {
   }
 }
 
+// The application frontend identity
+module webAppIdentity 'core/security/managed-identity.bicep' = {
+  name: 'webapp-identity'
+  scope: resourceGroup
+  params: {
+    name: webAppIdentityName
+    location: location
+  }
+}
+
 // The application frontend
-module webApp './core/host/staticwebapp.bicep' = {
+module webApp './core/host/container-app.bicep' = {
   name: 'webapp'
   scope: resourceGroup
   params: {
-    name: !empty(webAppName) ? webAppName : '${abbrs.webStaticSites}web-${resourceToken}'
-    location: webAppLocation
+    name: !empty(webAppName) ? webAppName : '${abbrs.appContainerApps}webapp-${resourceToken}'
+    location: location
     tags: union(tags, { 'azd-service-name': webAppName })
+    containerAppsEnvironmentName: containerApps.outputs.environmentName
+    containerRegistryName: containerApps.outputs.registryName
+    identityName: webAppIdentityName
+    containerCpuCoreCount: '1.0'
+    containerMemory: '2.0Gi'
+    secrets: [
+      {
+        name: 'appinsights-cs'
+        value: monitoring.outputs.applicationInsightsConnectionString
+      }
+    ]    
+    imageName: !empty(webAppImageName) ? webAppImageName : 'nginx:latest'
+    targetPort: 3002
   }
 }
 
@@ -538,5 +563,6 @@ output INDEXER_API_URI string = indexerApi.outputs.uri
 output ALLOWED_ORIGINS string = join(allowedOrigins, ',')
 output BACKEND_URI string = !empty(backendUri) ? backendUri : searchApi.outputs.uri
 
+output WEBAPP_PRINCIPAL_ID string = webApp.outputs.identityPrincipalId
 output INDEXER_PRINCIPAL_ID string = indexerApi.outputs.identityPrincipalId
 output SEARCH_API_PRINCIPAL_ID string = searchApi.outputs.identityPrincipalId
