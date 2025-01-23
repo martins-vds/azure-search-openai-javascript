@@ -49,15 +49,6 @@ param openAiResourceGroupName string = ''
 param openAiResourceGroupLocation string
 param openAiSkuName string = 'S0'
 
-@description('Location for the Static Web App')
-@allowed(['westus2', 'centralus', 'eastus2', 'westeurope', 'eastasia', 'eastasiastage'])
-@metadata({
-  azd: {
-    type: 'location'
-  }
-})
-param webAppLocation string
-
 param chatGptDeploymentName string // Set in main.parameters.json
 param chatGptDeploymentCapacity int = 30
 param chatGptModelName string // Set in main.parameters.json
