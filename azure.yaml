@@ -8,21 +8,19 @@ services:
   webapp:
     project: ./packages/webapp
     language: ts
-    host: containerapp
-    docker:
-      context: ../..
-    # hooks:
-    #   predeploy:
-    #     windows:
-    #       shell: pwsh
-    #       run: npm run build
-    #       interactive: true
-    #       continueOnError: false
-    #     posix:
-    #       shell: sh
-    #       run: export SEARCH_API_URI && npm run build
-    #       interactive: true
-    #       continueOnError: false
+    host: appservice
+    hooks:
+      predeploy:
+        windows:
+          shell: pwsh
+          run: npm run build
+          interactive: true
+          continueOnError: false
+        posix:
+          shell: sh
+          run: export SEARCH_API_URI && npm run build
+          interactive: true
+          continueOnError: false
 
   search:
     project: ./packages/search

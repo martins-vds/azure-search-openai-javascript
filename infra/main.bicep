@@ -12,11 +12,12 @@ param location string
 param resourceGroupName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
-param webAppName string = 'webapp'
-param webAppImageName string = ''
-param searchApiName string = 'search'
+param webAppName string = ''
+param webAppServiceSkuName string
+param webAppServicePlanName string = ''
+param searchApiName string = ''
 param searchApiImageName string = ''
-param indexerApiName string = 'indexer'
+param indexerApiName string = ''
 param indexerApiImageName string = ''
 
 param logAnalyticsName string = ''
@@ -40,7 +41,19 @@ param storageSkuName string
 param openAiServiceName string = ''
 param openAiResourceGroupName string = ''
 @description('Location for the OpenAI resource group')
-@allowed(['australiaeast', 'canadaeast', 'eastus', 'eastus2', 'francecentral', 'japaneast', 'northcentralus', 'swedencentral', 'switzerlandnorth', 'uksouth', 'westeurope'])
+@allowed([
+  'australiaeast'
+  'canadaeast'
+  'eastus'
+  'eastus2'
+  'francecentral'
+  'japaneast'
+  'northcentralus'
+  'swedencentral'
+  'switzerlandnorth'
+  'uksouth'
+  'westeurope'
+])
 @metadata({
   azd: {
     type: 'location'
@@ -71,7 +84,10 @@ param aliasTag string = ''
 param isContinuousDeployment bool = false
 
 var abbrs = loadJsonContent('abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var resourceGroupNameFinal = !empty(resourceGroupName)
+  ? resourceGroupName
+  : '${abbrs.resourcesResourceGroups}${environmentName}'
+var resourceToken = toLower(uniqueString(subscription().id, resourceGroupNameFinal, environmentName, location))
 var tags = union({ 'azd-env-name': environmentName }, empty(aliasTag) ? {} : { alias: aliasTag })
 var allowedOrigins = empty(allowedOrigin) ? [webApp.outputs.uri] : [webApp.outputs.uri, allowedOrigin]
 
@@ -81,7 +97,7 @@ var searchApiIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}searc
 
 // Organize resources in a resource group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+  name: resourceGroupNameFinal
   location: location
   tags: tags
 }
@@ -105,9 +121,15 @@ module monitoring './core/monitor/monitoring.bicep' = {
   params: {
     location: location
     tags: tags
-    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+    logAnalyticsName: !empty(logAnalyticsName)
+      ? logAnalyticsName
+      : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsName: !empty(applicationInsightsName)
+      ? applicationInsightsName
+      : '${abbrs.insightsComponents}${resourceToken}'
+    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName)
+      ? applicationInsightsDashboardName
+      : '${abbrs.portalDashboards}${resourceToken}'
   }
 }
 
@@ -117,8 +139,12 @@ module containerApps './core/host/container-apps.bicep' = {
   scope: resourceGroup
   params: {
     name: 'containerapps'
-    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
-    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName)
+      ? containerAppsEnvironmentName
+      : '${abbrs.appManagedEnvironments}${resourceToken}'
+    containerRegistryName: !empty(containerRegistryName)
+      ? containerRegistryName
+      : '${abbrs.containerRegistryRegistries}${resourceToken}'
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
@@ -138,26 +164,41 @@ module webAppIdentity 'core/security/managed-identity.bicep' = {
 }
 
 // The application frontend
-module webApp './core/host/container-app.bicep' = {
+// Create an App Service Plan to group applications under the same payment plan and SKU
+module webAppServicePlan 'core/host/appserviceplan.bicep' = {
+  name: 'webappserviceplan'
+  scope: resourceGroup
+  params: {
+    name: !empty(webAppServicePlanName) ? webAppServicePlanName : '${abbrs.webServerFarms}web-${resourceToken}'
+    location: location
+    tags: tags
+    sku: {
+      name: webAppServiceSkuName
+      capacity: 1
+    }
+    kind: 'linux'
+  }
+}
+
+module webApp 'core/host/appservice.bicep' = {
   name: 'webapp'
   scope: resourceGroup
   params: {
-    name: !empty(webAppName) ? webAppName : '${abbrs.appContainerApps}webapp-${resourceToken}'
+    name: !empty(webAppName) ? webAppName : '${abbrs.webSitesAppService}front-${resourceToken}'
     location: location
-    tags: union(tags, { 'azd-service-name': webAppName })
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    identityName: webAppIdentityName
-    containerCpuCoreCount: '1.0'
-    containerMemory: '2.0Gi'
-    secrets: [
-      {
-        name: 'appinsights-cs'
-        value: monitoring.outputs.applicationInsightsConnectionString
-      }
-    ]    
-    imageName: !empty(webAppImageName) ? webAppImageName : 'nginx:latest'
-    targetPort: 3002
+    tags: union(tags, { 'azd-service-name': 'webapp' })
+    // Need to check deploymentTarget again due to https://github.com/Azure/bicep/issues/3990
+    appServicePlanId: webAppServicePlan.outputs.id
+    runtimeName: 'node'
+    runtimeVersion: '20-lts'
+    appCommandLine: 'pm2 serve /home/site/wwwroot --no-daemon'
+    scmDoBuildDuringDeployment: true
+    identityType: 'UserAssigned'
+    managedIdentityId: webAppIdentity.outputs.resourceId
+    publicNetworkAccess: 'Enabled'
+    use32BitWorkerProcess: webAppServiceSkuName == 'F1'
+    alwaysOn: webAppServiceSkuName != 'F1'
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
   }
 }
 
@@ -178,7 +219,7 @@ module searchApi './core/host/container-app.bicep' = {
   params: {
     name: !empty(searchApiName) ? searchApiName : '${abbrs.appContainerApps}search-${resourceToken}'
     location: location
-    tags: union(tags, { 'azd-service-name': searchApiName })
+    tags: union(tags, { 'azd-service-name': 'search' })
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     identityName: searchApiIdentityName
@@ -259,7 +300,7 @@ module indexerApi './core/host/container-app.bicep' = {
   params: {
     name: !empty(indexerApiName) ? indexerApiName : '${abbrs.appContainerApps}indexer-${resourceToken}'
     location: location
-    tags: union(tags, { 'azd-service-name': indexerApiName })
+    tags: union(tags, { 'azd-service-name': 'indexer' })
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     identityName: indexerApiIdentityName

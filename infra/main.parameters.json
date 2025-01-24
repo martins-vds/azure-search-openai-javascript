@@ -70,6 +70,9 @@
     },
     "isContinuousDeployment": {
       "value": "${CI=false}"
+    },
+    "webAppServiceSkuName": {
+      "value": "${AZURE_APP_SERVICE_SKU=B1}"
     }
   }
 }
